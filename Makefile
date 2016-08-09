@@ -66,7 +66,7 @@ tar:
 	rm -rf tcpsplit-$(VERSION)
 
 clean:
-	rm -f *.o *core core 
+	rm -f *.o *core core tcpsplit
 
 distclean: clean
 	rm -f tcpsplit
