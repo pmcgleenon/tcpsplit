@@ -251,8 +251,8 @@ void process_trace ()
         else 
         {
             tcph = (struct tcphdr *)(pkt + offset);
-            src_port = tcph->th_sport;
-            dst_port = tcph->th_dport;
+            src_port = tcph->source;
+            dst_port = tcph->dest;
         }
         fn = get_file_num (src_ip,dst_ip,src_port,dst_port);
         pcap_dump ((u_char *)out_file [fn].dp,&hdr,(unsigned char *)pkt);
