@@ -54,6 +54,8 @@ pcap_t *inputp = NULL;
 unsigned short use_ip_addr = FALSE;
 unsigned short use_slash_24 = FALSE;
 unsigned short deterministic = FALSE;
+int exclude_ports[32] = {0};
+int tcp_only = FALSE;
 
 void usage (progname)
 char *progname;
@@ -67,6 +69,8 @@ char *progname;
     fprintf (stderr,"    -d        classify deterministically\n");
     fprintf (stderr,"    -h        usage instructions\n");
     fprintf (stderr,"    --use_ip  only use IP addresses in classification\n");
+    fprintf (stderr,"    --exclude_ports  comma-separated list of TCP ports to exclude\n");
+    fprintf (stderr,"    --tcp_only strip any non-TCP packets\n");
     fprintf (stderr,"    --version version information\n");
     exit (1);
 }
@@ -77,7 +81,10 @@ int argc;
 char *argv [];
 {
     char *p;
+    const char *s;
     int i;
+    const char delim[] = ",";
+    int j;
 
     for (i = 1; i < argc; i++)
     {
@@ -90,6 +97,21 @@ char *argv [];
     	}
     	if (!strcmp (argv [i],"--use_ip"))
     	    use_ip_addr = TRUE;
+        else if ((s = strstr (argv [i],"--exclude_ports")))
+        {
+            s+=15; /* --exclude_ports */
+            s+=1;  /* skip = */
+            do {
+                size_t field_len = strcspn(s, delim);
+                exclude_ports[j] = atoi(s);
+                j++;
+                s += field_len;
+            } while (*s++);
+
+            continue;
+        }
+        else if (!strcmp (argv [i],"--tcp_only"))
+            tcp_only = TRUE;
         else if (!strcmp (argv [i],"--24"))
             use_slash_24 = TRUE;
         else if (!strcmp (argv [i],"-d"))
@@ -114,7 +136,7 @@ char *argv [];
 	        if (strstr (p,"%") != NULL)
 	        {
 		        fprintf (stdout,"bad write format (3):\n");
-		        fprintf (stdout," too many arugments in format\n");
+		        fprintf (stdout," too many arguments in format\n");
 		        exit (1);
 	        }
 	        writespec = argv [i];
@@ -188,6 +210,7 @@ void process_trace ()
     unsigned short found_ip_hdr;
     unsigned short proc_etherhdr;
     unsigned short eth_type;
+    int j;
 
     while ((pkt = (u_char *)pcap_next (inputp,&hdr)) != NULL)
     {
@@ -246,13 +269,23 @@ void process_trace ()
         }
         offset += (iph->ip_hl * 4);
         if (use_ip_addr || (iph->ip_p != IPPROTO_TCP) || 
-            (hdr.caplen < (offset + 4)))
+            (hdr.caplen < (offset + 4))) {
             src_port = dst_port = 0;
+            if (tcp_only) goto skip; /* skip */
+        }
         else 
         {
             tcph = (struct tcphdr *)(pkt + offset);
-            src_port = tcph->source;
-            dst_port = tcph->dest;
+            src_port = htons(tcph->source);
+            dst_port = htons(tcph->dest);
+
+            for (j=0; j<sizeof(exclude_ports); j++) {
+                if (exclude_ports[j] == 0) continue;
+                else if (exclude_ports[j] == src_port || exclude_ports[j] == dst_port) {
+                    goto skip;
+                }
+            }
+skip: continue;
         }
         fn = get_file_num (src_ip,dst_ip,src_port,dst_port);
         pcap_dump ((u_char *)out_file [fn].dp,&hdr,(unsigned char *)pkt);
