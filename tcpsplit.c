@@ -51,7 +51,7 @@ unsigned short num_files = 0;
 struct pkt_dump_file out_file [MAX_OUTPUT_FILES];
 struct pkt_dump_file weirdf;
 pcap_t *inputp = NULL;
-unsigned short use_tcp_ports = TRUE;
+unsigned short use_ip_addr = FALSE;
 unsigned short use_slash_24 = FALSE;
 unsigned short deterministic = FALSE;
 
@@ -66,7 +66,7 @@ char *progname;
     fprintf (stderr,"    --24      use /24 of IP address in classification\n");
     fprintf (stderr,"    -d        classify deterministically\n");
     fprintf (stderr,"    -h        usage instructions\n");
-    fprintf (stderr,"    --notcp   only use IP addresses in classification\n");
+    fprintf (stderr,"    --use_ip  only use IP addresses in classification\n");
     fprintf (stderr,"    --version version information\n");
     exit (1);
 }
@@ -81,59 +81,59 @@ char *argv [];
 
     for (i = 1; i < argc; i++)
     {
-	if (!strcmp (argv [i],"-h"))
-	    usage (argv [0]);
-	if (!strcmp (argv [i],"--version"))
-	{
-	    fprintf (stdout,"tcpsplit v%s\n", VERSION);
-	    exit (0);
-	}
-	if (!strcmp (argv [i],"--notcp"))
-	    use_tcp_ports = FALSE;
+	    if (!strcmp (argv [i],"-h"))
+	        usage (argv [0]);
+    	if (!strcmp (argv [i],"--version"))
+    	{
+    	    fprintf (stdout,"tcpsplit v%s\n", VERSION);
+    	    exit (0);
+    	}
+    	if (!strcmp (argv [i],"--use_ip"))
+    	    use_ip_addr = TRUE;
         else if (!strcmp (argv [i],"--24"))
             use_slash_24 = TRUE;
         else if (!strcmp (argv [i],"-d"))
             deterministic = TRUE;
-	else if (readfile == NULL)
-	    readfile = argv [i];
-	else if (writespec == NULL)
-	{
-	    if ((p = strstr (argv [i],"%")) == NULL)
-	    {
-		fprintf (stderr,"bad write file format (1):\n");
-		fprintf (stderr," format must contain %%d\n");
-		exit (1);
+    	else if (readfile == NULL)
+    	    readfile = argv [i];
+    	else if (writespec == NULL)
+    	{
+    	    if ((p = strstr (argv [i],"%")) == NULL)
+    	    {
+        		fprintf (stderr,"bad write file format (1):\n");
+        		fprintf (stderr," format must contain %%d\n");
+        		exit (1);
+	        }
+	        if (*(++p) != 'd')
+	        {
+		        fprintf (stderr,"bad write format (2):\n");
+		        fprintf (stderr," format must not contain arguments other ");
+		        fprintf (stderr,"than %%d\n");
+		        exit (1);
+	        }
+	        if (strstr (p,"%") != NULL)
+	        {
+		        fprintf (stdout,"bad write format (3):\n");
+		        fprintf (stdout," too many arugments in format\n");
+		        exit (1);
+	        }
+	        writespec = argv [i];
+    	}
+    	else if (num_files == 0)
+    	{
+	        num_files = atoi (argv [i]);
+	        if (num_files > MAX_OUTPUT_FILES)
+	        {
+    	    	fprintf (stderr,"tcpsplit only supports %d output files\n",
+    			 MAX_OUTPUT_FILES);
+        		exit (1);
+	        }
 	    }
-	    if (*(++p) != 'd')
-	    {
-		fprintf (stderr,"bad write format (2):\n");
-		fprintf (stderr," format must not contain arguments other ");
-		fprintf (stderr,"than %%d\n");
-		exit (1);
-	    }
-	    if (strstr (p,"%") != NULL)
-	    {
-		fprintf (stdout,"bad write format (3):\n");
-		fprintf (stdout," too many arugments in format\n");
-		exit (1);
-	    }
-	    writespec = argv [i];
-	}
-	else if (num_files == 0)
-	{
-	    num_files = atoi (argv [i]);
-	    if (num_files > MAX_OUTPUT_FILES)
-	    {
-		fprintf (stderr,"tcpsplit only supports %d output files\n",
-			 MAX_OUTPUT_FILES);
-		exit (1);
-	    }
-	}
-	else
-	    usage (argv [0]);
+	    else
+	        usage (argv [0]);
     }
     if ((readfile == NULL) || (writespec == NULL) || (num_files == 0))
-	usage (argv [0]);
+        usage (argv [0]);
 }
 
 
@@ -146,31 +146,31 @@ void open_trace_files ()
 
     if ((inputp = pcap_open_offline (readfile, errbuf)) == NULL)
     {
-	fprintf (stderr,"error opening tracefile %s: %s\n", readfile, errbuf);
-	exit (1);
+	    fprintf (stderr,"error opening tracefile %s: %s\n", readfile, errbuf);
+	    exit (1);
     }
     if ((filename = (char *)malloc (strlen (writespec) + 10)) == NULL)
     {
-	fprintf (stderr,"open_trace_files() memory allocation problem\n");
-	exit (1);
+	    fprintf (stderr,"open_trace_files() memory allocation problem\n");
+	    exit (1);
     }
     for (i = 0; i < num_files; i++)
     {
-	sprintf (filename,writespec,i);
-	if ((out_file [i].dp = pcap_dump_open (inputp,filename)) == NULL)
-	{
-	    fprintf (stderr,"cannot open %s for writing\n", filename);
-	    exit (1);
-	}
-	out_file [i].pkts = 0;
+	    sprintf (filename,writespec,i);
+	    if ((out_file [i].dp = pcap_dump_open (inputp,filename)) == NULL)
+	    {
+	        fprintf (stderr,"cannot open %s for writing\n", filename);
+	        exit (1);
+    	}
+    	out_file [i].pkts = 0;
     }
     p = strstr (writespec,"%d") + 1;
     *p = 's';
     sprintf (filename,writespec,"weird");
     if ((weirdf.dp = pcap_dump_open (inputp,filename)) == NULL)
     {
-	fprintf (stderr,"cannot open %s for writing\n", filename);
-	exit (1);
+	    fprintf (stderr,"cannot open %s for writing\n", filename);
+	    exit (1);
     }
 }
 
@@ -245,7 +245,7 @@ void process_trace ()
             dst_ip = ntohl (dst_ip) & SLASH24;
         }
         offset += (iph->ip_hl * 4);
-        if (!use_tcp_ports || (iph->ip_p != IPPROTO_TCP) || 
+        if (use_ip_addr || (iph->ip_p != IPPROTO_TCP) || 
             (hdr.caplen < (offset + 4)))
             src_port = dst_port = 0;
         else 
