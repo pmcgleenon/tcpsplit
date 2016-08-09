@@ -1,0 +1,137 @@
+#!/bin/sh
+
+# tcpsplit validator
+# Mark Allman (mallman@icir.org)
+#
+# Copyright (c) 2004--2013 International Computer Science Institute
+# 
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation files
+# (the "Software"), to deal in the Software without restriction,
+# including without limitation the rights to use, copy, modify, merge,
+# publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+# 
+# The names and trademarks of copyright holders may not be used in
+# advertising or publicity pertaining to the software without specific
+# prior permission. Title to copyright in this software and any
+# associated documentation will at all times remain with the copyright
+# holders.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+uniq_cnns ()
+{
+    tcpdump -tt -n -r $1 2> /dev/null |perl -e 'while (<STDIN>) { print "$1 $3\n" if (/((\d+\.){4}\d+) \> ((\d+\.){4}\d+)\:/); }' |sort -u > $1.uniq
+}
+
+
+if [ $# -ne 1 ]
+then
+    echo "usage: `basename $0` trace"
+    exit 1
+fi
+
+TRACE=$1
+
+echo "running tcpsplit"
+./tcpsplit $TRACE validate.$$.%d.dmp 200
+# ./tcpsplit --24 $TRACE validate.$$.%d.dmp 200
+# ./tcpsplit -d $TRACE validate.$$.%d.dmp 200
+# ./tcpsplit -d --notcp $TRACE validate.$$.%d.dmp 200
+echo
+
+echo "crunching traces"
+echo -n " orig"
+uniq_cnns $TRACE
+C=1
+for I in validate.$$.*.dmp
+do
+    echo -n " $C"
+    uniq_cnns $I
+    C=`expr $C + 1`
+done
+echo 
+echo
+
+echo "comparing traces"
+cat validate.$$.*.dmp.uniq |sort > validate.$$.all.sort
+uniq validate.$$.all.sort > validate.$$.all.sort.uniq
+CNNS1=`cat $TRACE.uniq |wc -l`
+CNNS2=`cat validate.$$.all.sort |wc -l`
+CNNS3=`cat validate.$$.all.sort.uniq |wc -l`
+tcpdump -tt -n -r $TRACE > validate.$$.orig.pkts 2> /dev/null
+for I in validate.$$.*.dmp
+do
+    tcpdump -tt -n -r $I >> validate.$$.sub.pkts 2> /dev/null
+done
+sort validate.$$.sub.pkts > validate.$$.sub.pkts.sort
+PKTS1=`cat validate.$$.orig.pkts |wc -l`
+PKTS2=`cat validate.$$.sub.pkts.sort |wc -l`
+cmp -s validate.$$.orig.pkts validate.$$.sub.pkts.sort
+R=$?
+echo
+
+FAILED=0
+if [ $CNNS1 -eq $CNNS2 ]
+then
+    echo "test 1: passed"
+    echo "  all connections in the original in sub-traces"
+else
+    FAILED=1
+    echo "test 1: failed"
+    echo "  not all connections in the original in sub-traces"
+fi
+echo
+if [ $CNNS2 -eq $CNNS3 ]
+then
+    echo "test 2: passed"
+    echo "  no duplicate connections in sub-traces"
+else
+    FAILED=1
+    echo "test 2: failed"
+    echo "  connections span sub-traces"
+fi
+echo
+if [ $PKTS1 -eq $PKTS2 ]
+then
+    echo "test 3: passed"
+    echo "  same number of packets in original and sub-traces"
+else
+    FAILED=1
+    echo "test 3: failed"
+    echo "  different number of packets in original and sub-traces"
+fi
+echo
+if [ $R -eq 0 ]
+then
+    echo "test 4: passed"
+    echo "  same packets in original trace and sub-traces"
+else
+    FAILED=1
+    echo "test 4: failed"
+    echo "  different packets in original trace and sub-traces"
+fi
+echo
+if [ $FAILED -eq 0 ]
+then
+    echo "cleaning"
+    rm -f validate.$$.*
+    rm -f $TRACE.uniq validate.$$.*.dmp.uniq
+    rm -f validate.$$.sub.pkts
+else
+    echo "some tests failed; not cleaning"
+fi
+
+exit 0
