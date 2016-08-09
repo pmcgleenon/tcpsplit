@@ -36,7 +36,7 @@
 #define FALSE                  0
 #define TRUE                   1
 
-#define MAX_OUTPUT_FILES       256
+#define MAX_OUTPUT_FILES       1024 * 1024
 #define HASH_MULTIPLIER        37
 #define HASH_TBL_SIZE          48611
 #define EH_SIZE                14
